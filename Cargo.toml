@@ -12,7 +12,7 @@ build = "build.rs"
 path = "src/lib.rs"
 
 [dependencies]
-wit-bindgen = "0.46"
+wit-bindgen = "0.60"
 
 [package.metadata.component]
 package = "bottles:plugin"
