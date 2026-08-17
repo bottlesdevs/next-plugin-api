@@ -1,0 +1,19 @@
+[package]
+name = "bottles-plugin-api"
+description = "Rust guest API for Bottles Next plugins"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+wit-bindgen = "0.46"
+
+[package.metadata.component]
+package = "bottles:plugin"
+target = { path = "wit" }
