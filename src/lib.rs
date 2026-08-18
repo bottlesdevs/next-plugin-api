@@ -3,12 +3,19 @@
 /// The exact WIT/API version implemented by this crate.
 pub const API_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub use wit::AccountIdentity;
+
 /// A Bottles plugin.
 pub trait Plugin {
     /// Creates the persistent plugin instance.
     fn new() -> Self
     where
         Self: Sized;
+
+    /// Links an account to the profile identified by `profile_id`.
+    fn link_account(&mut self, _profile_id: String) -> Result<AccountIdentity, String> {
+        Err("storefront account integration is not implemented".into())
+    }
 }
 
 /// Registers a type as the plugin exported by the current WebAssembly component.
@@ -24,11 +31,19 @@ macro_rules! register_plugin {
 
 #[doc(hidden)]
 pub mod __private {
-    use super::Plugin;
+    use super::{AccountIdentity, Plugin};
 
     pub fn register_plugin(build: fn() -> Box<dyn Plugin>) {
         // SAFETY: the component host serializes initialization and calls for each instance.
         unsafe { super::PLUGIN = Some(build()) }
+    }
+
+    pub fn link_account(profile_id: String) -> Result<AccountIdentity, String> {
+        // SAFETY: each Wasm instance has its own static and the host serializes calls.
+        let plugin = unsafe { &mut *(&raw mut super::PLUGIN) }
+            .as_mut()
+            .expect("init-plugin must run before link-account");
+        plugin.link_account(profile_id)
     }
 }
 
@@ -50,3 +65,9 @@ mod wit {
 wit::export!(_PluginComponent with_types_in wit);
 
 struct _PluginComponent;
+
+impl wit::Guest for _PluginComponent {
+    fn link_account(profile_id: String) -> Result<AccountIdentity, String> {
+        __private::link_account(profile_id)
+    }
+}

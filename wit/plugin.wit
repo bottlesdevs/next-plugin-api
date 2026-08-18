@@ -1,5 +1,11 @@
 package bottles:plugin@0.1.0;
 
 world plugin {
+    record account-identity {
+        account-id: string,
+        display-name: string,
+    }
+
     export init-plugin: func();
+    export link-account: func(profile-id: string) -> result<account-identity, string>;
 }
