@@ -1,17 +1,18 @@
 [package]
 name = "bottles-plugin-api"
 description = "Rust guest API for Bottles Next plugins"
-version.workspace = true
+version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-build = "build.rs"
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
+http.workspace = true
+wasip2 = "=1.0.4"
 wit-bindgen = "0.60"
 
 [package.metadata.component]

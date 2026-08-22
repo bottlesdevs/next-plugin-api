@@ -1,11 +1,46 @@
 package bottles:plugin@0.1.0;
 
-world plugin {
+interface account-link {
+    resource interaction {
+        request-input: func(url: string, instructions: string) -> result<string, string>;
+    }
+}
+
+interface lifecycle {
+    enum plugin-kind {
+        storefront-account-provider,
+    }
+
+    provides: func() -> list<plugin-kind>;
+
+    resource plugin {
+        new: static func() -> result<plugin, string>;
+    }
+}
+
+interface storefront-account-provider {
+    use account-link.{interaction};
+    use lifecycle.{plugin};
+
     record account-identity {
         account-id: string,
         display-name: string,
     }
 
-    export init-plugin: func();
-    export link-account: func(profile-id: string) -> result<account-identity, string>;
+    record linked-account {
+        identity: account-identity,
+        credential: option<list<u8>>,
+    }
+
+    link-account: func(
+        plugin: borrow<plugin>,
+        interaction: borrow<interaction>,
+    ) -> result<linked-account, string>;
+}
+
+world plugin {
+    import account-link;
+
+    export lifecycle;
+    export storefront-account-provider;
 }
