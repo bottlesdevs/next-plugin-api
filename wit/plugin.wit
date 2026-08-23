@@ -9,6 +9,7 @@ interface account-link {
 interface lifecycle {
     enum plugin-kind {
         storefront-account-provider,
+        storefront-library-provider,
     }
 
     provides: func() -> list<plugin-kind>;
@@ -38,9 +39,31 @@ interface storefront-account-provider {
     ) -> result<linked-account, string>;
 }
 
+interface storefront-library-provider {
+    use lifecycle.{plugin};
+
+    record owned-game {
+        id: string,
+        title: string,
+    }
+
+    record listed-games {
+        games: list<owned-game>,
+        /// `none` keeps the current credential; `some` replaces it.
+        updated-credential: option<list<u8>>,
+    }
+
+    list-games: func(
+        plugin: borrow<plugin>,
+        account-id: string,
+        credential: option<list<u8>>,
+    ) -> result<listed-games, string>;
+}
+
 world plugin {
     import account-link;
 
     export lifecycle;
     export storefront-account-provider;
+    export storefront-library-provider;
 }

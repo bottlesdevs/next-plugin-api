@@ -4,6 +4,7 @@ pub use __wit::bottles::plugin::account_link::Interaction as AccountLinkInteract
 pub use __wit::exports::bottles::plugin::storefront_account_provider::{
     AccountIdentity, LinkedAccount,
 };
+pub use __wit::exports::bottles::plugin::storefront_library_provider::{ListedGames, OwnedGame};
 
 /// Shared state owned by one loaded plugin instance.
 pub trait Plugin: Sized + 'static {
@@ -19,16 +20,61 @@ pub trait StorefrontAccountProvider: Plugin {
     ) -> Result<LinkedAccount, String>;
 }
 
+/// Lists games owned through a storefront account.
+pub trait StorefrontLibraryProvider: Plugin {
+    fn list_games(
+        &mut self,
+        account_id: &str,
+        credential: Option<&[u8]>,
+    ) -> Result<ListedGames, String>;
+}
+
 /// Exports a Bottles plugin component.
 ///
 /// A plugin has one shared state resource and declares its implemented
 /// capabilities at compile time.
 #[macro_export]
 macro_rules! export_plugin {
-    ($plugin:ident: [StorefrontAccountProvider]) => {
+    (@kind StorefrontAccountProvider) => {
+        $crate::__private::PluginKind::StorefrontAccountProvider
+    };
+    (@kind StorefrontLibraryProvider) => {
+        $crate::__private::PluginKind::StorefrontLibraryProvider
+    };
+    (@export $plugin:ty, StorefrontAccountProvider) => {
+        fn link_account(
+            plugin: &mut $plugin,
+            interaction: &$crate::AccountLinkInteraction,
+        ) -> Result<$crate::LinkedAccount, String> {
+            <$plugin as $crate::StorefrontAccountProvider>::link_account(plugin, interaction)
+        }
+    };
+    (@export $plugin:ty, StorefrontLibraryProvider) => {
+        fn list_games(
+            plugin: &mut $plugin,
+            account_id: &str,
+            credential: Option<&[u8]>,
+        ) -> Result<$crate::ListedGames, String> {
+            <$plugin as $crate::StorefrontLibraryProvider>::list_games(
+                plugin,
+                account_id,
+                credential,
+            )
+        }
+    };
+    ($plugin:ty: [$($capability:ident),+ $(,)?]) => {
         #[doc(hidden)]
         mod __bottles_plugin_export {
             use super::*;
+
+            impl $crate::__private::PluginExports for $plugin {
+                fn provides() -> Vec<$crate::__private::PluginKind> {
+                    vec![$($crate::export_plugin!(@kind $capability)),+]
+                }
+
+                $($crate::export_plugin!(@export $plugin, $capability);)+
+            }
+
             type Component = $crate::__private::Component<$plugin>;
 
             $crate::__wit::export!(Component with_types_in $crate::__wit);
@@ -40,21 +86,51 @@ macro_rules! export_plugin {
 pub mod __private {
     use std::{cell::RefCell, marker::PhantomData};
 
-    use crate::{Plugin, StorefrontAccountProvider};
+    use crate::{AccountLinkInteraction, LinkedAccount, ListedGames, Plugin};
 
+    pub use super::__wit::exports::bottles::plugin::lifecycle::PluginKind;
     use super::__wit::exports::bottles::plugin::{
-        lifecycle::{self, GuestPlugin, PluginKind},
-        storefront_account_provider,
+        lifecycle::{self, GuestPlugin},
+        storefront_account_provider, storefront_library_provider,
     };
 
     pub struct Component<T>(PhantomData<fn() -> T>);
     pub struct PluginState<T>(RefCell<T>);
 
-    impl<T: StorefrontAccountProvider> lifecycle::Guest for Component<T> {
+    pub trait PluginExports: Plugin {
+        fn provides() -> Vec<PluginKind>;
+
+        fn link_account(
+            _plugin: &mut Self,
+            _interaction: &AccountLinkInteraction,
+        ) -> Result<LinkedAccount, String> {
+            unreachable!("host invoked an unadvertised storefront account capability")
+        }
+
+        fn list_games(
+            _plugin: &mut Self,
+            _account_id: &str,
+            _credential: Option<&[u8]>,
+        ) -> Result<ListedGames, String> {
+            unreachable!("host invoked an unadvertised storefront library capability")
+        }
+    }
+
+    impl<T> PluginState<T> {
+        fn with_mut<R>(&self, call: impl FnOnce(&mut T) -> Result<R, String>) -> Result<R, String> {
+            let mut plugin = self
+                .0
+                .try_borrow_mut()
+                .map_err(|_| "plugin state is already borrowed".to_owned())?;
+            call(&mut plugin)
+        }
+    }
+
+    impl<T: PluginExports> lifecycle::Guest for Component<T> {
         type Plugin = PluginState<T>;
 
         fn provides() -> Vec<PluginKind> {
-            vec![PluginKind::StorefrontAccountProvider]
+            T::provides()
         }
     }
 
@@ -64,17 +140,26 @@ pub mod __private {
         }
     }
 
-    impl<T: StorefrontAccountProvider> storefront_account_provider::Guest for Component<T> {
+    impl<T: PluginExports> storefront_account_provider::Guest for Component<T> {
         fn link_account(
             plugin: lifecycle::PluginBorrow<'_>,
             interaction: &crate::AccountLinkInteraction,
         ) -> Result<crate::LinkedAccount, String> {
-            let plugin = plugin.get::<PluginState<T>>();
-            let mut plugin = plugin
-                .0
-                .try_borrow_mut()
-                .map_err(|_| "plugin state is already borrowed".to_owned())?;
-            plugin.link_account(interaction)
+            plugin
+                .get::<PluginState<T>>()
+                .with_mut(|plugin| T::link_account(plugin, interaction))
+        }
+    }
+
+    impl<T: PluginExports> storefront_library_provider::Guest for Component<T> {
+        fn list_games(
+            plugin: lifecycle::PluginBorrow<'_>,
+            account_id: String,
+            credential: Option<Vec<u8>>,
+        ) -> Result<crate::ListedGames, String> {
+            plugin
+                .get::<PluginState<T>>()
+                .with_mut(|plugin| T::list_games(plugin, &account_id, credential.as_deref()))
         }
     }
 }
