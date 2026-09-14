@@ -21,6 +21,12 @@ pub trait StorefrontAccountProvider: Plugin {
 }
 
 /// Lists games owned through a storefront account.
+///
+/// Outer errors carry no credential update. Once authentication refreshes,
+/// return `Ok(ListedGames)` with the replacement credential, putting any later
+/// enumeration error in `games`. `updated_credential: None` retains the current
+/// credential. Hosts process the update before reporting an enumeration error.
+/// Traps and abandoned calls cannot deliver an update through this result.
 pub trait StorefrontLibraryProvider: Plugin {
     fn list_games(
         &mut self,

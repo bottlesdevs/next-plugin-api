@@ -48,11 +48,15 @@ interface storefront-library-provider {
     }
 
     record listed-games {
-        games: list<owned-game>,
+        /// Enumeration may fail after authentication has refreshed successfully.
+        games: result<list<owned-game>, string>,
         /// `none` keeps the current credential; `some` replaces it.
         updated-credential: option<list<u8>>,
     }
 
+    /// An outer error carries no credential update. After refreshing, return
+    /// a listed-games value even if enumeration fails, so the host can persist
+    /// the replacement before reporting the enumeration error.
     list-games: func(
         plugin: borrow<plugin>,
         account-id: string,
