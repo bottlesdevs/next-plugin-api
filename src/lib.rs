@@ -215,6 +215,8 @@ pub mod http_client {
         let body = outgoing
             .body()
             .map_err(|()| "HTTP request body is unavailable".to_owned())?;
+        let future = outgoing_handler::handle(outgoing, None)
+            .map_err(|error| format!("HTTP request failed: {error:?}"))?;
         let mut stream = body
             .write()
             .map_err(|()| "HTTP request body stream is unavailable".to_owned())?;
@@ -226,8 +228,6 @@ pub mod http_client {
         OutgoingBody::finish(body, None)
             .map_err(|error| format!("failed to finish HTTP request: {error:?}"))?;
 
-        let future = outgoing_handler::handle(outgoing, None)
-            .map_err(|error| format!("HTTP request failed: {error:?}"))?;
         future.subscribe().block();
         let incoming = future
             .get()
