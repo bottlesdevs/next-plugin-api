@@ -1,10 +1,16 @@
 //! Guest bindings for Bottles plugin interfaces.
 
-/// Account linking and library enumeration through one storefront contract.
-pub mod storefront {
-    wit_bindgen::generate!({ path: "wit", world: "storefront", pub_export_macro: true });
+/// Account linking through an explicit host interaction capability.
+pub mod account {
+    wit_bindgen::generate!({ path: "wit", world: "account", pub_export_macro: true });
     pub use bottles::plugin::account_link::Interaction;
-    pub use exports::bottles::plugin::storefront_provider::*;
+    pub use exports::bottles::plugin::account_provider::*;
+}
+
+/// Optional authenticated library enumeration.
+pub mod library {
+    wit_bindgen::generate!({ path: "wit", world: "library", pub_export_macro: true });
+    pub use exports::bottles::plugin::library_provider::*;
 }
 
 /// Export the selected SDK interfaces implemented by a plugin.

@@ -6,7 +6,7 @@ interface account-link {
     }
 }
 
-interface storefront-provider {
+interface account-provider {
     use account-link.{interaction};
 
     record account-identity {
@@ -23,6 +23,9 @@ interface storefront-provider {
         interaction: borrow<interaction>,
     ) -> result<linked-account, string>;
 
+}
+
+interface library-provider {
     record owned-game {
         id: string,
         title: string,
@@ -39,7 +42,6 @@ interface storefront-provider {
         credential: option<list<u8>>,
     ) -> result<authentication, string>;
 
-    /// Return an empty list when library enumeration is not supported.
     list-games: func(
         account-id: string,
         access: list<u8>,
@@ -47,7 +49,16 @@ interface storefront-provider {
 
 }
 
-world storefront {
+world account {
     import account-link;
-    export storefront-provider;
+    export account-provider;
+}
+
+world library {
+    export library-provider;
+}
+
+world storefront {
+    include account;
+    include library;
 }
