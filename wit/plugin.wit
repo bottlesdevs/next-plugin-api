@@ -6,22 +6,8 @@ interface account-link {
     }
 }
 
-interface lifecycle {
-    enum plugin-kind {
-        storefront-account-provider,
-        storefront-library-provider,
-    }
-
-    provides: func() -> list<plugin-kind>;
-
-    resource plugin {
-        new: static func() -> result<plugin, string>;
-    }
-}
-
-interface storefront-account-provider {
+interface account-provider {
     use account-link.{interaction};
-    use lifecycle.{plugin};
 
     record account-identity {
         account-id: string,
@@ -34,40 +20,45 @@ interface storefront-account-provider {
     }
 
     link-account: func(
-        plugin: borrow<plugin>,
         interaction: borrow<interaction>,
     ) -> result<linked-account, string>;
+
 }
 
-interface storefront-library-provider {
-    use lifecycle.{plugin};
-
+interface library-provider {
     record owned-game {
         id: string,
         title: string,
     }
 
-    record listed-games {
-        /// Enumeration may fail after authentication has refreshed successfully.
-        games: result<list<owned-game>, string>,
-        /// `none` keeps the current credential; `some` replaces it.
+    record authentication {
+        access: list<u8>,
+        /// `none` retains the stored credential; `some` replaces it.
         updated-credential: option<list<u8>>,
     }
 
-    /// An outer error carries no credential update. After refreshing, return
-    /// a listed-games value even if enumeration fails, so the host can persist
-    /// the replacement before reporting the enumeration error.
-    list-games: func(
-        plugin: borrow<plugin>,
+    authenticate: func(
         account-id: string,
         credential: option<list<u8>>,
-    ) -> result<listed-games, string>;
+    ) -> result<authentication, string>;
+
+    list-games: func(
+        account-id: string,
+        access: list<u8>,
+    ) -> result<list<owned-game>, string>;
+
 }
 
-world plugin {
+world account {
     import account-link;
+    export account-provider;
+}
 
-    export lifecycle;
-    export storefront-account-provider;
-    export storefront-library-provider;
+world library {
+    export library-provider;
+}
+
+world storefront {
+    include account;
+    include library;
 }
