@@ -7,7 +7,11 @@ pub mod account {
     pub use exports::bottles::plugin::account_provider::*;
 }
 
-/// Optional authenticated library enumeration.
+/// Installed, launchable titles supplied by a plugin.
+///
+/// Entry IDs belong to the provider. Launch completion reports that the request
+/// finished, not that the title exited. Local filesystem and process capabilities
+/// are not supplied by this interface.
 pub mod library {
     wit_bindgen::generate!({ path: "wit", world: "library", pub_export_macro: true });
     pub use exports::bottles::plugin::library_provider::*;

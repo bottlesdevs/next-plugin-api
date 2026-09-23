@@ -26,27 +26,16 @@ interface account-provider {
 }
 
 interface library-provider {
-    record owned-game {
+    /// One installed title that this provider can launch.
+    record library-entry {
         id: string,
         title: string,
     }
 
-    record authentication {
-        access: list<u8>,
-        /// `none` retains the stored credential; `some` replaces it.
-        updated-credential: option<list<u8>>,
-    }
+    list-entries: func() -> result<list<library-entry>, string>;
 
-    authenticate: func(
-        account-id: string,
-        credential: option<list<u8>>,
-    ) -> result<authentication, string>;
-
-    list-games: func(
-        account-id: string,
-        access: list<u8>,
-    ) -> result<list<owned-game>, string>;
-
+    /// Completes when the launch request finishes, not when the title exits.
+    launch: func(id: string) -> result<_, string>;
 }
 
 world account {
