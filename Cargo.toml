@@ -12,8 +12,8 @@ path = "src/lib.rs"
 
 [dependencies]
 http.workspace = true
-wasip2 = "=1.0.4"
-wit-bindgen = "0.60"
+wasip2 = "2"
+wit-bindgen = "0.62.0"
 
 [package.metadata.component]
 package = "bottles:plugin"
