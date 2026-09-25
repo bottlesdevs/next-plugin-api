@@ -38,9 +38,10 @@ interface library-provider {
     launch: async func(id: string) -> result<_, string>;
 }
 
-/// Host interfaces supplied by core when opening any provider session.
+/// Host imports and provider exports supported by core.
 world core {
-    import account-link;
+    include account;
+    include library;
 }
 
 world account {
