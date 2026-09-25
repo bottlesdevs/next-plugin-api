@@ -1,4 +1,14 @@
 //! Guest bindings for Bottles plugin interfaces.
+//!
+//! Build guest crates as `cdylib` with
+//! `cargo +nightly-2026-09-25 build --target wasm32-wasip3`.
+//! The guest toolchain must be selected explicitly by crates that depend on this SDK.
+//! Implement the selected interfaces with async functions and export them with
+//! `export!(Plugin, account, library)` or just the interfaces the plugin provides.
+//!
+//! A host session preserves guest memory between calls. On WASIp3, `thread_local!`
+//! storage belongs to each component task; use ordinary static storage for state
+//! that must survive separate calls in the same session.
 
 /// Account linking through an explicit host interaction capability.
 pub mod account {
@@ -31,124 +41,20 @@ macro_rules! export {
 
 /// A small buffered client over the standard WASI HTTP interfaces.
 pub mod http_client {
-    use std::io::{Read, Write};
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Full};
 
     pub use http::{Method, Request, Response};
-    use wasip2::http::{
-        outgoing_handler,
-        types::{
-            Fields, IncomingBody, Method as WasiMethod, OutgoingBody, OutgoingRequest, Scheme,
-        },
-    };
+    use wasip3::http::client;
+    pub use wasip3::http::types::ErrorCode;
+    use wasip3::http_compat::{http_from_wasi_response, http_into_wasi_request};
 
-    /// Sends one buffered HTTP request.
-    pub fn send(request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, String> {
-        let (parts, contents) = request.into_parts();
-        let headers = parts
-            .headers
-            .iter()
-            .map(|(name, value)| (name.to_string(), value.as_bytes().to_vec()))
-            .collect::<Vec<_>>();
-        let headers = Fields::from_list(&headers)
-            .map_err(|error| format!("invalid HTTP header: {error:?}"))?;
-        let outgoing = OutgoingRequest::new(headers);
-        let method = wasi_method(&parts.method);
-        outgoing
-            .set_method(&method)
-            .map_err(|()| "invalid HTTP method".to_owned())?;
-        outgoing
-            .set_scheme(parts.uri.scheme_str().map(wasi_scheme).as_ref())
-            .map_err(|()| "invalid HTTP scheme".to_owned())?;
-        outgoing
-            .set_authority(parts.uri.authority().map(|authority| authority.as_str()))
-            .map_err(|()| "invalid HTTP authority".to_owned())?;
-        outgoing
-            .set_path_with_query(
-                parts
-                    .uri
-                    .path_and_query()
-                    .map(|path_and_query| path_and_query.as_str()),
-            )
-            .map_err(|()| "invalid HTTP path".to_owned())?;
-
-        let body = outgoing
-            .body()
-            .map_err(|()| "HTTP request body is unavailable".to_owned())?;
-        let future = outgoing_handler::handle(outgoing, None)
-            .map_err(|error| format!("HTTP request failed: {error:?}"))?;
-        let mut stream = body
-            .write()
-            .map_err(|()| "HTTP request body stream is unavailable".to_owned())?;
-        stream
-            .write_all(&contents)
-            .map_err(|error| error.to_string())?;
-        stream.flush().map_err(|error| error.to_string())?;
-        drop(stream);
-        OutgoingBody::finish(body, None)
-            .map_err(|error| format!("failed to finish HTTP request: {error:?}"))?;
-
-        future.subscribe().block();
-        let incoming = future
-            .get()
-            .ok_or_else(|| "HTTP response was not ready".to_owned())?
-            .map_err(|()| "HTTP response was already consumed".to_owned())?
-            .map_err(|error| format!("HTTP request failed: {error:?}"))?;
-
-        let mut response = Response::builder().status(incoming.status());
-        for (name, value) in incoming.headers().entries() {
-            response = response.header(name, value);
-        }
-        let incoming_body = incoming
-            .consume()
-            .map_err(|()| "HTTP response body is unavailable".to_owned())?;
-        let mut stream = incoming_body
-            .stream()
-            .map_err(|()| "HTTP response body stream is unavailable".to_owned())?;
-        let mut body = Vec::new();
-        stream
-            .read_to_end(&mut body)
-            .map_err(|error| error.to_string())?;
-        drop(stream);
-        let _trailers = IncomingBody::finish(incoming_body);
-
-        response.body(body).map_err(|error| error.to_string())
-    }
-
-    fn wasi_method(method: &Method) -> WasiMethod {
-        match method.as_str() {
-            "GET" => WasiMethod::Get,
-            "HEAD" => WasiMethod::Head,
-            "POST" => WasiMethod::Post,
-            "PUT" => WasiMethod::Put,
-            "DELETE" => WasiMethod::Delete,
-            "CONNECT" => WasiMethod::Connect,
-            "OPTIONS" => WasiMethod::Options,
-            "TRACE" => WasiMethod::Trace,
-            "PATCH" => WasiMethod::Patch,
-            method => WasiMethod::Other(method.into()),
-        }
-    }
-
-    fn wasi_scheme(scheme: &str) -> Scheme {
-        match scheme {
-            "http" => Scheme::Http,
-            "https" => Scheme::Https,
-            scheme => Scheme::Other(scheme.into()),
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn maps_standard_and_custom_request_parts() {
-            assert!(matches!(wasi_method(&Method::POST), WasiMethod::Post));
-            assert!(matches!(
-                wasi_method(&Method::from_bytes(b"CUSTOM").unwrap()),
-                WasiMethod::Other(method) if method == "CUSTOM"
-            ));
-            assert!(matches!(wasi_scheme("https"), Scheme::Https));
-        }
+    /// Sends one buffered HTTP request and reads its complete response body.
+    pub async fn send(request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, ErrorCode> {
+        let request = http_into_wasi_request(request.map(Full::<Bytes>::from))?;
+        let response = client::send(request).await?;
+        let (parts, body) = http_from_wasi_response(response)?.into_parts();
+        let body = body.collect().await?.to_bytes().to_vec();
+        Ok(Response::from_parts(parts, body))
     }
 }
