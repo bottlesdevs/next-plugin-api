@@ -2,7 +2,7 @@ package bottles:plugin@0.1.0;
 
 interface account-link {
     resource interaction {
-        request-input: func(url: string, instructions: string) -> result<string, string>;
+        request-input: async func(url: string, instructions: string) -> result<string, string>;
     }
 }
 
@@ -19,7 +19,7 @@ interface account-provider {
         credential: option<list<u8>>,
     }
 
-    link-account: func(
+    link-account: async func(
         interaction: borrow<interaction>,
     ) -> result<linked-account, string>;
 
@@ -32,10 +32,16 @@ interface library-provider {
         title: string,
     }
 
-    list-entries: func() -> result<list<library-entry>, string>;
+    list-entries: async func() -> result<list<library-entry>, string>;
 
     /// Completes when the launch request finishes, not when the title exits.
-    launch: func(id: string) -> result<_, string>;
+    launch: async func(id: string) -> result<_, string>;
+}
+
+/// Host imports and provider exports supported by core.
+world core {
+    include account;
+    include library;
 }
 
 world account {
