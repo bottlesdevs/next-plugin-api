@@ -6,7 +6,8 @@
 //! Implement the selected interfaces with async functions and export them with
 //! `export!(Plugin, account, library)` or just the interfaces the plugin provides.
 //!
-//! A host session preserves guest memory between calls. On WASIp3, `thread_local!`
+//! The host supplies standard WASI state. A session preserves guest memory between calls.
+//! On WASIp3, `thread_local!`
 //! storage belongs to each component task; use ordinary static storage for state
 //! that must survive separate calls in the same session.
 
