@@ -1,0 +1,18 @@
+[package]
+name = "bottles-plugin-macros"
+description = "Guest binding generation for Bottles plugins"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+heck = "0.5"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "parsing"] }
+wit-parser = { version = "0.259", default-features = false, features = ["std"] }
