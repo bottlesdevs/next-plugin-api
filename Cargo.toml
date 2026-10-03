@@ -11,10 +11,8 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+bytes = "1"
 http.workspace = true
-wasip2 = "2"
+http-body-util = "0.1"
+wasip3 = { version = "0.9", features = ["http-compat"] }
 wit-bindgen = "0.62.0"
-
-[package.metadata.component]
-package = "bottles:plugin"
-target = { path = "wit" }
