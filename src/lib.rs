@@ -4,26 +4,26 @@
 //! `cargo +nightly-2026-09-25 build --target wasm32-wasip3`.
 //! The guest toolchain must be selected explicitly by crates that depend on this SDK.
 //! Implement [`Plugin`] and the provider traits, then select the exported
-//! providers with `export!(EpicGamesPlugin, account, library)`.
+//! providers with `export!(EpicGamesPlugin: account, library)`.
 //!
-//! The host supplies standard WASI state and constructs one guest `plugin-state.plugin`
-//! resource per session. Provider methods borrow that same object as `&self`.
-//! Use interior mutability for changing state and release mutable guards before
-//! an `.await`. On WASIp3, `thread_local!` storage belongs to each component task.
+//! One instance-global value is shared across capabilities. Calls can run concurrently:
+//! use interior mutability and release mutex guards before `.await`.
 
 pub mod account;
 pub mod library;
 
-pub use bottles_plugin_macros::export;
-
-/// Constructs one persistent guest object for a plugin session.
-pub trait Plugin: Sized + 'static {
+/// Constructs the guest state shared by all exported capabilities.
+pub trait Plugin: Send + Sync + Sized + 'static {
     fn new() -> Self;
 }
 
-#[doc(hidden)]
-pub mod __private {
-    pub use wit_bindgen;
+/// Exports one or more capability worlds from one guest instance.
+#[macro_export]
+macro_rules! export {
+    ($plugin:ident: $($cap:ident),+ $(,)?) => {
+        static __BOTTLES_PLUGIN: ::std::sync::OnceLock<$plugin> = ::std::sync::OnceLock::new();
+        $( $crate::$cap::__glue!($plugin, __BOTTLES_PLUGIN); )+
+    };
 }
 
 /// A small buffered client over the standard WASI HTTP interfaces.

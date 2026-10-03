@@ -6,15 +6,8 @@ interface account-link {
     }
 }
 
-interface plugin-state {
-    resource plugin {
-        constructor();
-    }
-}
-
 interface account-provider {
     use account-link.{interaction};
-    use plugin-state.{plugin};
 
     record account-identity {
         account-id: string,
@@ -27,44 +20,29 @@ interface account-provider {
     }
 
     link-account: async func(
-        self: borrow<plugin>,
         interaction: borrow<interaction>,
     ) -> result<linked-account, string>;
 
 }
 
 interface library-provider {
-    use plugin-state.{plugin};
-
     /// One installed title that this provider can launch.
     record library-entry {
         id: string,
         title: string,
     }
 
-    list-entries: async func(self: borrow<plugin>) -> result<list<library-entry>, string>;
+    list-entries: async func() -> result<list<library-entry>, string>;
 
     /// Completes when the launch request finishes, not when the title exits.
-    launch: async func(self: borrow<plugin>, id: string) -> result<_, string>;
-}
-
-world plugin-object {
-    export plugin-state;
-}
-
-/// Host imports and provider exports supported by core.
-world core {
-    include account;
-    include library;
+    launch: async func(id: string) -> result<_, string>;
 }
 
 world account {
     import account-link;
-    export plugin-state;
     export account-provider;
 }
 
 world library {
-    export plugin-state;
     export library-provider;
 }

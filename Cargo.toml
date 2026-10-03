@@ -11,7 +11,6 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-bottles-plugin-macros = { path = "macros" }
 bytes = "1"
 http.workspace = true
 http-body-util = "0.1"
