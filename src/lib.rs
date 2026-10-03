@@ -3,26 +3,32 @@
 //! Build guest crates as `cdylib` with
 //! `cargo +nightly-2026-09-25 build --target wasm32-wasip3`.
 //! The guest toolchain must be selected explicitly by crates that depend on this SDK.
-//! Implement [`Plugin`] and the provider traits, then select the exported
+//! Implement [`Default`] and the provider traits, then select the exported
 //! providers with `export!(EpicGamesPlugin: account, library)`.
 //!
-//! One instance-global value is shared across capabilities. Calls can run concurrently:
+//! `export!` creates the shared instance with `Default::default()` on first use.
+//! Calls may run concurrently:
 //! use interior mutability and release mutex guards before `.await`.
 
 pub mod account;
 pub mod library;
 
-/// Constructs the guest state shared by all exported capabilities.
-pub trait Plugin: Send + Sync + Sized + 'static {
-    fn new() -> Self;
+/// Implemented by `export!`; do not implement manually.
+pub trait Plugin: Default + Send + Sync + 'static {
+    fn instance() -> &'static Self;
 }
 
 /// Exports one or more capability worlds from one guest instance.
 #[macro_export]
 macro_rules! export {
     ($plugin:ident: $($cap:ident),+ $(,)?) => {
-        static __BOTTLES_PLUGIN: ::std::sync::OnceLock<$plugin> = ::std::sync::OnceLock::new();
-        $( $crate::$cap::__glue!($plugin, __BOTTLES_PLUGIN); )+
+        impl $crate::Plugin for $plugin {
+            fn instance() -> &'static Self {
+                static INSTANCE: ::std::sync::OnceLock<$plugin> = ::std::sync::OnceLock::new();
+                INSTANCE.get_or_init(<$plugin as ::core::default::Default>::default)
+            }
+        }
+        $( $crate::$cap::__bindings::export!($plugin with_types_in $crate::$cap::__bindings); )+
     };
 }
 
