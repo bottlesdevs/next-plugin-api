@@ -1,154 +1,158 @@
-//! Guest bindings for Bottles plugin interfaces.
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
-/// Account linking through an explicit host interaction capability.
-pub mod account {
-    wit_bindgen::generate!({ path: "wit", world: "account", pub_export_macro: true });
-    pub use bottles::plugin::account_link::Interaction;
-    pub use exports::bottles::plugin::account_provider::*;
-}
+pub mod account;
+pub mod library;
 
-/// Installed, launchable titles supplied by a plugin.
+/// Implemented by `export!`; do not implement manually.
 ///
-/// Entry IDs belong to the provider. Launch completion reports that the request
-/// finished, not that the title exited. Local filesystem and process capabilities
-/// are not supplied by this interface.
-pub mod library {
-    wit_bindgen::generate!({ path: "wit", world: "library", pub_export_macro: true });
-    pub use exports::bottles::plugin::library_provider::*;
+/// The macro uses [`Default`] to construct one instance shared by all selected
+/// capabilities. Provider methods receive references to that instance. Mutable
+/// state needs synchronization because calls may run concurrently.
+///
+/// # Examples
+///
+/// ```text
+/// #[derive(Default)]
+/// struct MyPlugin;
+/// // Implement the library provider trait for MyPlugin, then:
+/// bottles_plugin_api::export!(MyPlugin: library);
+/// ```
+pub trait Plugin: Default + Send + Sync + 'static {
+    /// Returns the shared guest state, initializing it on first use.
+    ///
+    /// The generated implementation uses [`Default::default()`] to initialize
+    /// state; subsequent calls reuse it. If construction panics, the instance
+    /// remains uninitialized.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the plugin's [`Default`] implementation panics.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// use bottles_plugin_api::Plugin;
+    /// let state = MyPlugin::instance();
+    /// ```
+    fn instance() -> &'static Self;
 }
 
-/// Export the selected SDK interfaces implemented by a plugin.
+/// Exports one or more capability worlds from one guest instance.
+///
+/// The type must implement [`Default`] and the provider trait for each listed
+/// capability: [`account::AccountProvider`] for `account`, or
+/// [`library::LibraryProvider`] for `library`. It must also be [`Send`], [`Sync`],
+/// and `'static`. The macro implements [`Plugin`] and initializes its state
+/// lazily through [`Default::default()`].
+///
+/// Invoke this macro once for the type. Only listed capabilities are exported;
+/// implementing another provider trait does not add an export.
+///
+/// # Examples
+///
+/// ```text
+/// // MyPlugin implements Default and both provider traits.
+/// bottles_plugin_api::export!(MyPlugin: account, library);
+/// ```
 #[macro_export]
 macro_rules! export {
-    ($plugin:ident, $($integration:ident),+ $(,)?) => {
-        $(
-            $crate::$integration::export!(
-                $plugin with_types_in $crate::$integration
-            );
-        )+
+    ($plugin:ident: $($cap:ident),+ $(,)?) => {
+        impl $crate::Plugin for $plugin {
+            fn instance() -> &'static Self {
+                static INSTANCE: ::std::sync::OnceLock<$plugin> = ::std::sync::OnceLock::new();
+                INSTANCE.get_or_init(<$plugin as ::core::default::Default>::default)
+            }
+        }
+        $( $crate::$cap::__bindings::export!($plugin with_types_in $crate::$cap::__bindings); )+
     };
 }
 
 /// A small buffered client over the standard WASI HTTP interfaces.
+///
+/// [`http_client::send`] accepts an [`http::Request`] with a [`Vec<u8>`] body and
+/// collects the complete response body into another vector. Request and response
+/// bodies are held in memory; use it for requests whose bodies fit in guest memory.
+///
+/// # Examples
+///
+/// ```text
+/// use bottles_plugin_api::http_client::{Request, send};
+/// let request = Request::get("https://example.com/catalog")
+///     .body(Vec::new())
+///     .map_err(|error| error.to_string())?;
+/// let response = send(request).await.map_err(|error| error.to_string())?;
+/// let bytes = response.into_body();
+/// ```
 pub mod http_client {
-    use std::io::{Read, Write};
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Full};
 
-    pub use http::{Method, Request, Response};
-    use wasip2::http::{
-        outgoing_handler,
-        types::{
-            Fields, IncomingBody, Method as WasiMethod, OutgoingBody, OutgoingRequest, Scheme,
-        },
-    };
+    /// An HTTP request method, such as GET or POST.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// use bottles_plugin_api::http_client::Method;
+    /// let method = Method::POST;
+    /// ```
+    pub use http::Method;
+    /// An HTTP request with a generic body; [`send`] accepts `Request<Vec<u8>>`.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// use bottles_plugin_api::http_client::Request;
+    /// let request = Request::get("https://example.com/catalog").body(Vec::new())?;
+    /// ```
+    pub use http::Request;
+    /// An HTTP response with status, headers, and a generic body.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// let status = response.status();
+    /// let body = response.into_body();
+    /// ```
+    pub use http::Response;
+    use wasip3::http::client;
+    /// A WASI HTTP failure during conversion, sending, or body collection.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// let response = bottles_plugin_api::http_client::send(request)
+    ///     .await
+    ///     .map_err(|error| error.to_string())?;
+    /// ```
+    pub use wasip3::http::types::ErrorCode;
+    use wasip3::http_compat::{http_from_wasi_response, http_into_wasi_request};
 
-    /// Sends one buffered HTTP request.
-    pub fn send(request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, String> {
-        let (parts, contents) = request.into_parts();
-        let headers = parts
-            .headers
-            .iter()
-            .map(|(name, value)| (name.to_string(), value.as_bytes().to_vec()))
-            .collect::<Vec<_>>();
-        let headers = Fields::from_list(&headers)
-            .map_err(|error| format!("invalid HTTP header: {error:?}"))?;
-        let outgoing = OutgoingRequest::new(headers);
-        let method = wasi_method(&parts.method);
-        outgoing
-            .set_method(&method)
-            .map_err(|()| "invalid HTTP method".to_owned())?;
-        outgoing
-            .set_scheme(parts.uri.scheme_str().map(wasi_scheme).as_ref())
-            .map_err(|()| "invalid HTTP scheme".to_owned())?;
-        outgoing
-            .set_authority(parts.uri.authority().map(|authority| authority.as_str()))
-            .map_err(|()| "invalid HTTP authority".to_owned())?;
-        outgoing
-            .set_path_with_query(
-                parts
-                    .uri
-                    .path_and_query()
-                    .map(|path_and_query| path_and_query.as_str()),
-            )
-            .map_err(|()| "invalid HTTP path".to_owned())?;
-
-        let body = outgoing
-            .body()
-            .map_err(|()| "HTTP request body is unavailable".to_owned())?;
-        let future = outgoing_handler::handle(outgoing, None)
-            .map_err(|error| format!("HTTP request failed: {error:?}"))?;
-        let mut stream = body
-            .write()
-            .map_err(|()| "HTTP request body stream is unavailable".to_owned())?;
-        stream
-            .write_all(&contents)
-            .map_err(|error| error.to_string())?;
-        stream.flush().map_err(|error| error.to_string())?;
-        drop(stream);
-        OutgoingBody::finish(body, None)
-            .map_err(|error| format!("failed to finish HTTP request: {error:?}"))?;
-
-        future.subscribe().block();
-        let incoming = future
-            .get()
-            .ok_or_else(|| "HTTP response was not ready".to_owned())?
-            .map_err(|()| "HTTP response was already consumed".to_owned())?
-            .map_err(|error| format!("HTTP request failed: {error:?}"))?;
-
-        let mut response = Response::builder().status(incoming.status());
-        for (name, value) in incoming.headers().entries() {
-            response = response.header(name, value);
-        }
-        let incoming_body = incoming
-            .consume()
-            .map_err(|()| "HTTP response body is unavailable".to_owned())?;
-        let mut stream = incoming_body
-            .stream()
-            .map_err(|()| "HTTP response body stream is unavailable".to_owned())?;
-        let mut body = Vec::new();
-        stream
-            .read_to_end(&mut body)
-            .map_err(|error| error.to_string())?;
-        drop(stream);
-        let _trailers = IncomingBody::finish(incoming_body);
-
-        response.body(body).map_err(|error| error.to_string())
-    }
-
-    fn wasi_method(method: &Method) -> WasiMethod {
-        match method.as_str() {
-            "GET" => WasiMethod::Get,
-            "HEAD" => WasiMethod::Head,
-            "POST" => WasiMethod::Post,
-            "PUT" => WasiMethod::Put,
-            "DELETE" => WasiMethod::Delete,
-            "CONNECT" => WasiMethod::Connect,
-            "OPTIONS" => WasiMethod::Options,
-            "TRACE" => WasiMethod::Trace,
-            "PATCH" => WasiMethod::Patch,
-            method => WasiMethod::Other(method.into()),
-        }
-    }
-
-    fn wasi_scheme(scheme: &str) -> Scheme {
-        match scheme {
-            "http" => Scheme::Http,
-            "https" => Scheme::Https,
-            scheme => Scheme::Other(scheme.into()),
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn maps_standard_and_custom_request_parts() {
-            assert!(matches!(wasi_method(&Method::POST), WasiMethod::Post));
-            assert!(matches!(
-                wasi_method(&Method::from_bytes(b"CUSTOM").unwrap()),
-                WasiMethod::Other(method) if method == "CUSTOM"
-            ));
-            assert!(matches!(wasi_scheme("https"), Scheme::Https));
-        }
+    /// Sends one buffered HTTP request and reads its complete response body.
+    ///
+    /// Non-success HTTP statuses remain ordinary responses; inspect the status
+    /// when deciding whether the provider's request succeeded.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ErrorCode`] if request or response conversion fails, the WASI
+    /// HTTP client cannot send the request, or response-body collection fails.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// use bottles_plugin_api::http_client::{Request, send};
+    /// let request = Request::get("https://example.com/catalog")
+    ///     .body(Vec::new())
+    ///     .map_err(|error| error.to_string())?;
+    /// let response = send(request).await.map_err(|error| error.to_string())?;
+    /// ```
+    pub async fn send(request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, ErrorCode> {
+        let request = http_into_wasi_request(request.map(Full::<Bytes>::from))?;
+        let response = client::send(request).await?;
+        let (parts, body) = http_from_wasi_response(response)?.into_parts();
+        let body = body.collect().await?.to_bytes().to_vec();
+        Ok(Response::from_parts(parts, body))
     }
 }
