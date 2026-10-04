@@ -1,6 +1,7 @@
 [package]
 name = "bottles-plugin-api"
 description = "Rust guest API for Bottles Next plugins"
+readme = "README.md"
 version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
