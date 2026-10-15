@@ -16,4 +16,4 @@ bytes = "1"
 http.workspace = true
 http-body-util = "0.1"
 wasip3 = { version = "0.9", features = ["http-compat"] }
-wit-bindgen = "0.62.0"
+wit-bindgen = "0.63.0"
