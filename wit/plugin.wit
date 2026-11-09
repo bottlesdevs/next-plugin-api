@@ -14,14 +14,9 @@ interface account-provider {
         display-name: string,
     }
 
-    record linked-account {
-        identity: account-identity,
-        credential: option<list<u8>>,
-    }
-
     link-account: async func(
         interaction: borrow<interaction>,
-    ) -> result<linked-account, string>;
+    ) -> result<account-identity, string>;
 
 }
 

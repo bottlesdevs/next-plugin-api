@@ -73,11 +73,13 @@ capabilities together.
 ## Account linking and HTTP
 
 [`account::AccountProvider`] receives a borrowed [`account::Interaction`] for
-requesting user input during that invocation. It returns public account identity
-and optional opaque credential bytes. When linking through Bottles core, identity
-is stored with the profile and credentials are stored separately in the platform
-credential store. The SDK currently has no credential retrieval interface; a
-later guest load does not restore an in-memory login session automatically.
+requesting user input during that invocation. It returns the account's public
+identity.
+
+A plugin's working directory is private to it and survives restarts and updates,
+and is removed when the plugin is uninstalled. Use it with `std::fs` for anything
+that must outlast the instance, such as a login session; it is the only directory
+the plugin can see.
 
 [`http_client::send`] uses standard WASI HTTP imports. Both the request and
 response bodies are fully buffered in memory; it does not provide a streaming

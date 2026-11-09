@@ -3,22 +3,20 @@
 //! Implement [`AccountProvider`] and select `account` in [`crate::export!`]. The
 //! host supplies an [`Interaction`] for the current call; the provider can ask
 //! the user to visit a URL and return input needed by its authentication flow.
-//! Return public identity separately from private credential bytes.
+//! Return the account's public identity.
 //!
 //! Provider state can retain an authenticated session for other capabilities in
-//! the same guest instance. That state is lost when the instance is unloaded;
-//! the SDK has no import for retrieving stored credentials on a later load.
+//! the same guest instance. That state is lost when the instance stops, so keep
+//! anything that must outlast it in a file: the plugin's working directory is
+//! private to it and survives restarts and updates.
 //!
 //! # Examples
 //!
 //! ```text
-//! use bottles_plugin_api::account::{AccountIdentity, LinkedAccount};
-//! let linked = LinkedAccount {
-//!     identity: AccountIdentity {
-//!         account_id: "provider-account-42".into(),
-//!         display_name: "Player".into(),
-//!     },
-//!     credential: None,
+//! use bottles_plugin_api::account::AccountIdentity;
+//! let identity = AccountIdentity {
+//!     account_id: "provider-account-42".into(),
+//!     display_name: "Player".into(),
 //! };
 //! ```
 
@@ -69,21 +67,6 @@ pub use __bindings::bottles::plugin::account_link::Interaction;
 /// ```
 pub use __bindings::exports::bottles::plugin::account_provider::AccountIdentity;
 use __bindings::exports::bottles::plugin::account_provider::Guest;
-/// Returns public account identity and optional private credential bytes.
-///
-/// `identity` is suitable for profile metadata. `credential` is an opaque byte
-/// vector whose format the provider chooses. When the caller links through
-/// Bottles core, it stores these bytes separately in the platform credential
-/// store. Returning `None` means there is no credential to store.
-///
-/// # Examples
-///
-/// ```text
-/// use bottles_plugin_api::account::LinkedAccount;
-/// let linked = LinkedAccount { identity, credential: None };
-/// ```
-pub use __bindings::exports::bottles::plugin::account_provider::LinkedAccount;
-
 /// Identifies or authenticates an account for linking to a profile.
 ///
 /// Implement this trait on the shared state type and select `account` in
@@ -98,7 +81,7 @@ pub use __bindings::exports::bottles::plugin::account_provider::LinkedAccount;
 ///     async fn link_account(
 ///         &self,
 ///         interaction: &bottles_plugin_api::account::Interaction,
-///     ) -> Result<bottles_plugin_api::account::LinkedAccount, String> {
+///     ) -> Result<bottles_plugin_api::account::AccountIdentity, String> {
 ///         let code = interaction.request_input(
 ///             "https://example.com/login".into(),
 ///             "Paste the authorization code after signing in.".into(),
@@ -112,9 +95,8 @@ pub trait AccountProvider {
     /// Runs the account-link flow using the supplied interaction resource.
     ///
     /// Return an account identity only after the provider's flow succeeds.
-    /// Include credential bytes only when there is a secret for the caller to
-    /// store. The interaction belongs to this invocation, not to the returned
-    /// account or the shared plugin state.
+    /// The interaction belongs to this invocation, not to the returned account
+    /// or the shared plugin state.
     ///
     /// # Errors
     ///
@@ -125,14 +107,14 @@ pub trait AccountProvider {
     /// # Examples
     ///
     /// ```text
-    /// let linked = provider.link_account(interaction).await?;
-    /// let account_id = linked.identity.account_id;
+    /// let identity = provider.link_account(interaction).await?;
+    /// let account_id = identity.account_id;
     /// ```
-    async fn link_account(&self, interaction: &Interaction) -> Result<LinkedAccount, String>;
+    async fn link_account(&self, interaction: &Interaction) -> Result<AccountIdentity, String>;
 }
 
 impl<P: AccountProvider + crate::Plugin> Guest for P {
-    async fn link_account(interaction: &Interaction) -> Result<LinkedAccount, String> {
+    async fn link_account(interaction: &Interaction) -> Result<AccountIdentity, String> {
         P::instance().link_account(interaction).await
     }
 }
