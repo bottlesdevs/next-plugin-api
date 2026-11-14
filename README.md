@@ -36,15 +36,14 @@ Set the guest's library target in its `Cargo.toml`:
 crate-type = ["cdylib"]
 ```
 
-Build with the SDK's supported guest toolchain:
+Build with Rust 1.100 or newer, after adding the target once:
 
 ```sh
-cargo +nightly-2026-09-25 build --release --target wasm32-wasip3
+rustup target add wasm32-wasip3
+cargo build --release --target wasm32-wasip3
 ```
 
-A dependency's `rust-toolchain.toml` does not select the consuming crate's
-toolchain. Select it explicitly with the command above or the guest crate's own
-toolchain file. The build produces a component in
+The build produces a component in
 `target/wasm32-wasip3/release/<crate_name>.wasm`.
 
 ## State and capability selection
